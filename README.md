@@ -6,6 +6,80 @@ cca enables unattended Claude Code sessions by monitoring TUI output and using a
 
 > *I genuinely love using Claude Code — it's the most capable coding agent I've worked with. Every time it autonomously completes a complex task, I feel like we're one step closer to AGI. The only thing that bothered me was the constant permission prompts during long sessions. So I built cca to scratch my own itch — and to let the agent run a little more freely, because I believe that's how we get there.*
 
+## Prerequisites
+
+- Python >= 3.9
+- [uv](https://docs.astral.sh/uv/)
+- [Ollama](https://ollama.ai/) running with a pulled model:
+
+```bash
+ollama pull gemma3:4b
+```
+
+## Why cca
+
+- **TUI-level injection** — works at the terminal I/O layer, won't break when Claude Code updates
+- **Non-intrusive** — doesn't modify Claude Code or its config; no reinstall needed after updates
+- **Fully local** — Ollama runs on your machine, no API costs, no data leaves your machine
+- **Zero Claude Code config** — no hooks, no settings changes, just run `cca` instead of `claude`
+
+## Quick Start
+
+```bash
+# 1. Install and start Ollama, then pull a model
+ollama pull gemma3:4b
+
+# 2. Verify the model name matches config.yaml (default: gemma3:4b)
+ollama list
+
+# 3. Install cca (re-running is safe and idempotent)
+# macOS / Linux
+./install.sh
+# Windows
+.\install.ps1
+
+# 4. Run
+cca                        # Start Claude Code with auto-confirmation
+cca -c                     # Continue last session
+cca --resume ID            # Resume a specific session
+cca -p "query"             # Non-interactive query (auto-confirm still active)
+cca --model sonnet         # Use specific model
+cca --worktree feature-auth  # Start in isolated git worktree
+cca claude [args...]       # Explicit form, same as above
+cca -h                     # Show cca help
+```
+
+All arguments (except `-h`/`--help`) are forwarded to the `claude` CLI. See `claude --help` for full flag reference.
+
+## Configuration
+
+Edit `config.yaml` in the project directory:
+
+```yaml
+ollama_model: "gemma3:4b"      # Ollama model name
+ollama_url: "http://localhost:11434"  # Ollama server address
+context_window: 2000           # Sliding window size (characters)
+idle_timeout: 6                # TUI idle timeout (seconds)
+```
+
+## Project Structure
+
+```
+cca/
+├── __init__.py
+├── __main__.py    # python -m cca entry point
+├── cli.py         # CLI argument parsing
+├── config.py      # Configuration loading
+├── monitor.py     # PTY monitoring + key injection
+├── detector.py    # Prompt detection + ANSI stripping
+├── judge.py       # Ollama API calls
+└── prompt.py      # Safety judgment prompt templates
+```
+
+## Logging
+
+Runtime logs are written to `cca.log` in the project directory, useful for debugging detection and judgment behavior.
+
 ## How It Works
 
 The detection pipeline has two layers:
@@ -49,82 +123,7 @@ When a confirmation prompt is detected, the buffer context is sent to a local Ol
 - Modifying project-level config files (`.gitignore`, `.env`, `package.json`, etc.)
 - Normal development workflow operations
 
-## Prerequisites
-
-- Python >= 3.9
-- [uv](https://docs.astral.sh/uv/)
-- [Ollama](https://ollama.ai/) running with a pulled model:
-
-```bash
-ollama pull gemma3:4b
-```
-
-## Quick Start
-
-```bash
-# Test run (within the project directory)
-./test.sh          # macOS / Linux
-.\test.ps1         # Windows
-```
-
-## Global Installation
-
-After installation, run `cca` from any directory. Re-running the install command is safe and idempotent:
-
-```bash
-# macOS / Linux
-./install.sh
-
-# Windows
-.\install.ps1
-```
-
-Usage:
-
-```bash
-cca                        # Start Claude Code with auto-confirmation
-cca -c                     # Continue last session
-cca --resume ID            # Resume a specific session
-cca -p "query"             # Non-interactive query (auto-confirm still active)
-cca --model sonnet         # Use specific model
-cca --worktree feature-auth  # Start in isolated git worktree
-cca claude [args...]       # Explicit form, same as above
-
-cca -h                     # Show cca help
-```
-
-All arguments (except `-h`/`--help`) are forwarded to the `claude` CLI. See `claude --help` for full flag reference.
-
-## Configuration
-
-Edit `config.yaml` in the project directory:
-
-```yaml
-ollama_model: "gemma3:4b"      # Ollama model name
-ollama_url: "http://localhost:11434"  # Ollama server address
-context_window: 2000           # Sliding window size (characters)
-idle_timeout: 6                # TUI idle timeout (seconds)
-```
-
-## Project Structure
-
-```
-cca/
-├── __init__.py
-├── __main__.py    # python -m cca entry point
-├── cli.py         # CLI argument parsing
-├── config.py      # Configuration loading
-├── monitor.py     # PTY monitoring + key injection
-├── detector.py    # Prompt detection + ANSI stripping
-├── judge.py       # Ollama API calls
-└── prompt.py      # Safety judgment prompt templates
-```
-
-## Logging
-
-Runtime logs are written to `cca.log` in the project directory, useful for debugging detection and judgment behavior.
-
-## Architecture
+### Architecture
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐

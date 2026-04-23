@@ -6,6 +6,80 @@ cca 通过监听 Claude Code TUI 输出，调用本地 Ollama 模型自动判断
 
 > *I genuinely love using Claude Code — it's the most capable coding agent I've worked with. Every time it autonomously completes a complex task, I feel like we're one step closer to AGI. The only thing that bothered me was the constant permission prompts during long sessions. So I built cca to scratch my own itch — and to let the agent run a little more freely, because I believe that's how we get there.*
 
+## 前置要求
+
+- Python >= 3.9
+- [uv](https://docs.astral.sh/uv/)
+- [Ollama](https://ollama.ai/) 已运行，并拉取模型：
+
+```bash
+ollama pull gemma3:4b
+```
+
+## 为什么用 cca
+
+- **纯 TUI 注入** — 在终端 I/O 层操作，Claude Code 更新不会导致失效
+- **零侵入** — 不修改 Claude Code 及其配置，更新后无需重新安装
+- **完全本地** — Ollama 本地运行，无 API 费用，数据不出本机
+- **零 Claude Code 配置** — 无需 hooks 或设置改动，用 `cca` 代替 `claude` 即可
+
+## 快速开始
+
+```bash
+# 1. 安装并启动 Ollama，拉取模型
+ollama pull gemma3:4b
+
+# 2. 确认模型名称与 config.yaml 一致（默认: gemma3:4b）
+ollama list
+
+# 3. 安装 cca（重复运行安全无副作用）
+# macOS / Linux
+./install.sh
+# Windows
+.\install.ps1
+
+# 4. 运行
+cca                        # 启动 Claude Code + 自动确认
+cca -c                     # 继续上次会话
+cca --resume ID            # 恢复指定会话
+cca -p "query"             # 非交互式查询（自动确认仍生效）
+cca --model sonnet         # 指定模型
+cca --worktree feature-auth  # 在隔离的 git worktree 中启动
+cca claude [args...]       # 显式写法，效果同上
+cca -h                     # 显示 cca 帮助信息
+```
+
+所有参数（`-h`/`--help` 除外）直接转发给 `claude` CLI。完整参数列表请参考 `claude --help`。
+
+## 配置
+
+编辑项目目录下的 `config.yaml`：
+
+```yaml
+ollama_model: "gemma3:4b"      # Ollama 模型名称
+ollama_url: "http://localhost:11434"  # Ollama 地址
+context_window: 2000           # 滑动窗口大小（字符数）
+idle_timeout: 6                # TUI 静止超时（秒）
+```
+
+## 项目结构
+
+```
+cca/
+├── __init__.py
+├── __main__.py    # python -m cca 入口
+├── cli.py         # CLI 参数解析
+├── config.py      # 配置加载
+├── monitor.py     # PTY 监听 + 按键注入
+├── detector.py    # 提示检测 + ANSI 剥离
+├── judge.py       # Ollama API 调用
+└── prompt.py      # 安全判断提示词
+```
+
+## 日志
+
+运行日志写入项目目录的 `cca.log`，可用于排查检测和判断行为。
+
 ## 工作原理
 
 检测流程分为两层：
@@ -49,82 +123,7 @@ cca 通过监听 Claude Code TUI 输出，调用本地 Ollama 模型自动判断
 - 修改项目级配置文件（`.gitignore`、`.env`、`package.json` 等）
 - 正常开发工作流操作
 
-## 前置要求
-
-- Python >= 3.9
-- [uv](https://docs.astral.sh/uv/)
-- [Ollama](https://ollama.ai/) 已运行，并拉取模型：
-
-```bash
-ollama pull gemma3:4b
-```
-
-## 快速开始
-
-```bash
-# 测试运行（项目目录内）
-./test.sh          # macOS / Linux
-.\test.ps1         # Windows
-```
-
-## 全局安装
-
-安装后在任意目录使用 `cca`。重复运行安装命令安全无副作用：
-
-```bash
-# macOS / Linux
-./install.sh
-
-# Windows
-.\install.ps1
-```
-
-使用方式：
-
-```bash
-cca                        # 启动 Claude Code + 自动确认
-cca -c                     # 继续上次会话
-cca --resume ID            # 恢复指定会话
-cca -p "query"             # 非交互式查询（自动确认仍生效）
-cca --model sonnet         # 指定模型
-cca --worktree feature-auth  # 在隔离的 git worktree 中启动
-cca claude [args...]       # 显式写法，效果同上
-
-cca -h                     # 显示 cca 帮助信息
-```
-
-所有参数（`-h`/`--help` 除外）直接转发给 `claude` CLI。完整参数列表请参考 `claude --help`。
-
-## 配置
-
-编辑项目目录下的 `config.yaml`：
-
-```yaml
-ollama_model: "gemma3:4b"      # Ollama 模型名称
-ollama_url: "http://localhost:11434"  # Ollama 地址
-context_window: 2000           # 滑动窗口大小（字符数）
-idle_timeout: 6                # TUI 静止超时（秒）
-```
-
-## 项目结构
-
-```
-cca/
-├── __init__.py
-├── __main__.py    # python -m cca 入口
-├── cli.py         # CLI 参数解析
-├── config.py      # 配置加载
-├── monitor.py     # PTY 监听 + 按键注入
-├── detector.py    # 提示检测 + ANSI 剥离
-├── judge.py       # Ollama API 调用
-└── prompt.py      # 安全判断提示词
-```
-
-## 日志
-
-运行日志写入项目目录的 `cca.log`，可用于排查检测和判断行为。
-
-## 架构图
+### 架构图
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
