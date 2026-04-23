@@ -142,6 +142,10 @@ When a confirmation prompt is detected, the buffer context is sent to a local Ol
 3. When a prompt is found, Judge sends context to Ollama for safety classification
 4. Based on the verdict, key injection presses the appropriate option
 
+## Contributing
+
+Issues and PRs are welcome! The author currently only has access to macOS — if you encounter problems on Linux, Windows, or other environments, please open an issue or submit a PR to help improve cross-platform support.
+
 ## License
 
 MIT
