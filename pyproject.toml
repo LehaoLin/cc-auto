@@ -1,0 +1,17 @@
+[project]
+name = "cca"
+version = "0.1.0"
+description = "Claude Code auto-confirmation tool"
+requires-python = ">=3.9"
+dependencies = [
+    "pexpect",
+    "pyyaml",
+    "requests",
+]
+
+[project.scripts]
+cca = "cca.cli:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
