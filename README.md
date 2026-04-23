@@ -45,7 +45,7 @@ cca --resume ID            # Resume a specific session
 cca -p "query"             # Non-interactive query (auto-confirm still active)
 cca --model sonnet         # Use specific model
 cca --worktree feature-auth  # Start in isolated git worktree
-cca claude [args...]       # Explicit form, same as above
+cca claude [args...]       # Explicit form, same as `cca`
 cca -h                     # Show cca help
 ```
 
@@ -96,7 +96,7 @@ This layer runs on every read cycle with no model overhead.
 
 ### Layer 2: Safety Judgment (Ollama)
 
-When a confirmation prompt is detected, the buffer context is sent to a local Ollama model which classifies the operation as **safe** or **dangerous**:
+When a confirmation prompt is detected, the buffer context is sent to a local Ollama model (using the [safety judgment prompt](cca/prompt.py)) which classifies the operation as **safe** or **dangerous**:
 
 - **Safe** → automatically selects "Yes" (sends `1` + Enter)
 - **Dangerous** → automatically selects "No" (finds the No option number, sends it + Enter)

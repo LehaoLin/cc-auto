@@ -45,7 +45,7 @@ cca --resume ID            # 恢复指定会话
 cca -p "query"             # 非交互式查询（自动确认仍生效）
 cca --model sonnet         # 指定模型
 cca --worktree feature-auth  # 在隔离的 git worktree 中启动
-cca claude [args...]       # 显式写法，效果同上
+cca claude [args...]       # 显式写法，等同 `cca`
 cca -h                     # 显示 cca 帮助信息
 ```
 
@@ -96,7 +96,7 @@ cca/
 
 ### 第二层：安全判断（Ollama）
 
-检测到确认提示后，将缓冲区上下文发送给本地 Ollama 模型，分类为**安全**或**危险**：
+检测到确认提示后，将缓冲区上下文发送给本地 Ollama 模型（使用[安全判断提示词](cca/prompt.py)），分类为**安全**或**危险**：
 
 - **安全** → 自动选择 "Yes"（发送 `1` + 回车）
 - **危险** → 自动选择 "No"（查找 No 选项编号，发送编号 + 回车）
