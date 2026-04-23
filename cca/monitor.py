@@ -30,13 +30,12 @@ class ClaudeMonitor:
         self._last_action_buffer_hash = None
         self._last_action_time = 0
 
-    def start(self, extra_args=None):
+    def start(self, extra_args=None, claude_bin="claude"):
         self._running = True
         cols, rows = shutil.get_terminal_size()
-        cmd = "claude"
         args = extra_args or []
         self.child = pexpect.spawn(
-            cmd,
+            claude_bin,
             args=args,
             encoding="utf-8",
             codec_errors="replace",
@@ -136,9 +135,11 @@ class ClaudeMonitor:
                 return
 
             if verdict == "safe":
-                logger.info("Verdict: SAFE -> pressing Enter")
+                logger.info("Verdict: SAFE -> pressing 1 (Yes)")
                 time.sleep(0.5)
-                self.child.sendline("")
+                self.child.send("1")
+                time.sleep(0.3)
+                self.child.send("\r")
             else:
                 logger.info("Verdict: DANGEROUS -> selecting No")
                 time.sleep(0.5)
@@ -146,7 +147,7 @@ class ClaudeMonitor:
                 if no_num:
                     self.child.send(no_num)
                     time.sleep(0.5)
-                    self.child.sendline("继续")
+                    self.child.sendline("continue")
                     time.sleep(0.5)
                     self.child.send("\r")
                 else:

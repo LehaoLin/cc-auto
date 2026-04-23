@@ -1,10 +1,20 @@
 import sys
+import shutil
 import logging
 import os
 import requests
 
 from .config import load_config
 from .monitor import ClaudeMonitor
+
+
+def _find_claude_binary():
+    path = shutil.which("claude")
+    if not path:
+        print("[cca] Error: 'claude' not found in PATH")
+        print("[cca] Install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
+        sys.exit(1)
+    return path
 
 
 def _check_ollama(config):
@@ -34,20 +44,38 @@ def _setup_logging():
     )
 
 
+def _print_help():
+    print("""Usage: cca [options] [claude-args...]
+
+  cca                          Start Claude Code with auto-confirmation
+  cca -c                       Continue last session
+  cca --resume ID              Resume a specific session
+  cca -p "query"               Non-interactive query (auto-confirm still active)
+  cca --model sonnet           Use specific model
+  cca --worktree feature-auth  Start in isolated git worktree
+
+All arguments are forwarded to the 'claude' CLI.
+See: claude --help for full flag reference.""")
+
+
 def main():
     args = sys.argv[1:]
-    if not args or args[0] not in ("claude",):
-        print("Usage: cca claude [options]")
-        print("  cca claude              - Start Claude Code with auto-confirmation")
-        print("  cca claude -c           - Continue last session")
-        print("  cca claude --resume ID  - Resume a specific session")
-        sys.exit(1)
+    if args and args[0] in ("-h", "--help"):
+        _print_help()
+        sys.exit(0)
 
-    claude_args = args[1:]
+    # Support both "cca claude [args]" and "cca [args]"
+    if args and args[0] == "claude":
+        claude_args = args[1:]
+    else:
+        claude_args = args
+
+    claude_bin = _find_claude_binary()
 
     config = load_config()
     _setup_logging()
 
+    print(f"[cca] Claude: {claude_bin}")
     print(f"[cca] Model: {config['ollama_model']}")
     if not _check_ollama(config):
         sys.exit(1)
@@ -56,6 +84,6 @@ def main():
 
     monitor = ClaudeMonitor(config)
     try:
-        monitor.start(claude_args)
+        monitor.start(claude_args, claude_bin=claude_bin)
     except KeyboardInterrupt:
         print("\n[cca] Exiting...")

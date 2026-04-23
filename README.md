@@ -1,35 +1,75 @@
 # cca - Claude Code Auto-Confirmation Tool
 
-cca 通过监听 Claude Code TUI 输出，调用本地 Ollama 模型自动判断操作安全性，实现 Claude Code 无人值守运行。
+[English](README.md) | [简体中文](README_zh.md)
 
-## 工作原理
+cca enables unattended Claude Code sessions by monitoring TUI output and using a local Ollama model to judge whether operations are safe, automatically confirming or rejecting them.
 
-1. 通过 PTY 启动 Claude Code，后台线程流式监听 TUI 输出（滑动窗口缓冲区）
-2. 检测到用户确认提示时（Yes/No 选择、TUI 静止超时、"Esc to cancel" 提示符）
-3. 将上下文发送给本地 Ollama 模型判断操作是否安全
-4. 安全 → 自动按 Enter 确认；危险 → 自动选择 No，并输入"继续"并回车
+> *I genuinely love using Claude Code — it's the most capable coding agent I've worked with. Every time it autonomously completes a complex task, I feel like we're one step closer to AGI. The only thing that bothered me was the constant permission prompts during long sessions. So I built cca to scratch my own itch — and to let the agent run a little more freely, because I believe that's how we get there.*
 
-## 前置要求
+## How It Works
+
+The detection pipeline has two layers:
+
+### Layer 1: Prompt Detection (Regex-based, zero latency)
+
+A background thread streams the Claude Code TUI output through a sliding window buffer and detects confirmation prompts using pattern matching:
+
+- **Yes/No prompt** — matches the numbered `1. Yes` / `2. No` selection UI
+- **Cancel/confirm prompt** — matches keywords like "Esc to cancel", "enter to confirm", "Tab to amend"
+- **Idle timeout** — triggers when TUI output hasn't changed for a configurable number of seconds
+
+This layer runs on every read cycle with no model overhead.
+
+### Layer 2: Safety Judgment (Ollama)
+
+When a confirmation prompt is detected, the buffer context is sent to a local Ollama model which classifies the operation as **safe** or **dangerous**:
+
+- **Safe** → automatically selects "Yes" (sends `1` + Enter)
+- **Dangerous** → automatically selects "No" (finds the No option number, sends it + Enter)
+- **Retry** — if the TUI hasn't changed 5 seconds after an action, re-judges the prompt
+
+### Safety Classification Criteria
+
+**DANGEROUS operations:**
+- Deleting user files outside the project directory
+- Modifying critical system files (`/etc/hosts`, `/etc/sudoers`)
+- Running destructive commands targeting non-project files (`rm -rf` outside project, `dd`, `mkfs`)
+- Force pushing to main/master branch
+- Exposing secrets or credentials in public locations
+- Any operation that could cause irreversible data loss outside the project
+
+**SAFE operations:**
+- Creating new files or directories
+- Editing project source code files
+- Running read-only commands (`ls`, `cat`, `grep`, `find`, `git status`, etc.)
+- Running tests, linters, build commands within the project
+- Installing project dependencies (`npm install`, `pip install`)
+- Git operations: commit, push, pull, merge, rebase, reset, branch management
+- Installing system packages (`brew install`, `apt install`, `npm install -g`)
+- Modifying project-level config files (`.gitignore`, `.env`, `package.json`, etc.)
+- Normal development workflow operations
+
+## Prerequisites
 
 - Python >= 3.9
 - [uv](https://docs.astral.sh/uv/)
-- [Ollama](https://ollama.ai/) 已运行，并拉取模型：
+- [Ollama](https://ollama.ai/) running with a pulled model:
 
 ```bash
 ollama pull gemma3:4b
 ```
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 测试运行（项目目录内）
+# Test run (within the project directory)
 ./test.sh          # macOS / Linux
 .\test.ps1         # Windows
 ```
 
-## 全局安装与更新
+## Global Installation
 
-安装后在任意目录使用 `cca claude`。安装和更新使用同一命令，重复运行安全无副作用：
+After installation, run `cca` from any directory. Re-running the install command is safe and idempotent:
 
 ```bash
 # macOS / Linux
@@ -39,39 +79,70 @@ ollama pull gemma3:4b
 .\install.ps1
 ```
 
-安装完成后：
+Usage:
 
 ```bash
-cca claude              # 启动 Claude Code + 自动确认
-cca claude -c           # 继续上次会话
-cca claude --resume ID  # 恢复指定会话
+cca                        # Start Claude Code with auto-confirmation
+cca -c                     # Continue last session
+cca --resume ID            # Resume a specific session
+cca -p "query"             # Non-interactive query (auto-confirm still active)
+cca --model sonnet         # Use specific model
+cca --worktree feature-auth  # Start in isolated git worktree
+cca claude [args...]       # Explicit form, same as above
+
+cca -h                     # Show cca help
 ```
 
-## 配置
+All arguments (except `-h`/`--help`) are forwarded to the `claude` CLI. See `claude --help` for full flag reference.
 
-编辑项目目录下的 `config.yaml`：
+## Configuration
+
+Edit `config.yaml` in the project directory:
 
 ```yaml
-ollama_model: "gemma3:4b"      # Ollama 模型名称
-ollama_url: "http://localhost:11434"  # Ollama 地址
-context_window: 2000           # 滑动窗口大小（字符数）
-idle_timeout: 6                # TUI 静止超时（秒）
+ollama_model: "gemma3:4b"      # Ollama model name
+ollama_url: "http://localhost:11434"  # Ollama server address
+context_window: 2000           # Sliding window size (characters)
+idle_timeout: 6                # TUI idle timeout (seconds)
 ```
 
-## 项目结构
+## Project Structure
 
 ```
 cca/
 ├── __init__.py
-├── __main__.py    # python -m cca 入口
-├── cli.py         # CLI 参数解析
-├── config.py      # 配置加载
-├── monitor.py     # PTY 监听 + 按键注入
-├── detector.py    # 提示检测 + ANSI 剥离
-├── judge.py       # Ollama API 调用
-└── prompt.py      # 安全判断提示词
+├── __main__.py    # python -m cca entry point
+├── cli.py         # CLI argument parsing
+├── config.py      # Configuration loading
+├── monitor.py     # PTY monitoring + key injection
+├── detector.py    # Prompt detection + ANSI stripping
+├── judge.py       # Ollama API calls
+└── prompt.py      # Safety judgment prompt templates
 ```
 
-## 日志
+## Logging
 
-运行日志写入项目目录的 `cca.log`，可用于排查检测和判断行为。
+Runtime logs are written to `cca.log` in the project directory, useful for debugging detection and judgment behavior.
+
+## Architecture
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  PTY (claude) │────▶│   Detector   │────▶│    Judge     │
+│  TUI output   │     │  (regex)     │     │  (Ollama)    │
+└──────────────┘     └──────────────┘     └──────┬───────┘
+       ▲                                          │
+       │            ┌──────────────┐              │
+       └────────────│  Key Inject  │◀─────────────┘
+                    │  (pexpect)   │   safe / dangerous
+                    └──────────────┘
+```
+
+1. PTY spawns Claude Code, background thread reads TUI output
+2. Detector scans buffer for confirmation prompts (regex, high-frequency)
+3. When a prompt is found, Judge sends context to Ollama for safety classification
+4. Based on the verdict, key injection presses the appropriate option
+
+## License
+
+MIT
