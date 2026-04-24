@@ -6,6 +6,7 @@ import requests
 
 from .config import load_config
 from .monitor import ClaudeMonitor
+from .wizard import run_wizard
 
 
 def _find_claude_binary():
@@ -45,16 +46,23 @@ def _setup_logging():
 
 
 def _print_help():
-    print("""Usage: cca [options] [claude-args...]
+    print("""Usage: cca <command> [options] [claude-args...]
 
+Commands:
+  api             Configure API provider (Ollama or external API)
+
+  (default)       Start Claude Code with auto-confirmation
+
+Examples:
   cca                          Start Claude Code with auto-confirmation
+  cca api                      Configure API provider interactively
   cca -c                       Continue last session
   cca --resume ID              Resume a specific session
   cca -p "query"               Non-interactive query (auto-confirm still active)
   cca --model sonnet           Use specific model
   cca --worktree feature-auth  Start in isolated git worktree
 
-All arguments are forwarded to the 'claude' CLI.
+All other arguments are forwarded to the 'claude' CLI.
 See: claude --help for full flag reference.""")
 
 
@@ -62,6 +70,10 @@ def main():
     args = sys.argv[1:]
     if args and args[0] in ("-h", "--help"):
         _print_help()
+        sys.exit(0)
+
+    if args and args[0] == "api":
+        run_wizard()
         sys.exit(0)
 
     # Support both "cca claude [args]" and "cca [args]"
@@ -76,10 +88,16 @@ def main():
     _setup_logging()
 
     print(f"[cca] Claude: {claude_bin}")
-    print(f"[cca] Model: {config['ollama_model']}")
-    if not _check_ollama(config):
-        sys.exit(1)
-    print("[cca] Ollama ready. Starting Claude Code...")
+    provider = config.get("provider", "ollama")
+    if provider == "ollama":
+        print(f"[cca] Model: {config['ollama_model']}")
+        if not _check_ollama(config):
+            sys.exit(1)
+        print("[cca] Ollama ready. Starting Claude Code...")
+    else:
+        print(f"[cca] Model: {config.get('api_model', 'unknown')}")
+        print(f"[cca] Provider: {config.get('api_url', 'unknown')}")
+        print("[cca] Starting Claude Code...")
     print("[cca] Press Ctrl+C to exit\n")
 
     monitor = ClaudeMonitor(config)

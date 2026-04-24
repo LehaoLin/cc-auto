@@ -2,8 +2,12 @@ import os
 import yaml
 
 _DEFAULTS = {
+    "provider": "ollama",
     "ollama_model": "gemma3:4b",
     "ollama_url": "http://localhost:11434",
+    "api_url": "",
+    "api_model": "",
+    "api_key": "",
     "context_window": 2000,
     "idle_timeout": 6,
 }
@@ -19,3 +23,8 @@ def load_config():
             if user_cfg:
                 config.update(user_cfg)
     return config
+
+
+def save_config(config):
+    with open(CONFIG_PATH, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
