@@ -46,14 +46,20 @@ if echo "$COMMAND" | grep -qEi '^(git\s|ls|cat|head|tail|grep|find|echo|pwd|cd|m
 fi
 
 # Layer 2: Ollama intelligent judgment for unknown commands
-ESCAPED_CMD=$(echo "$COMMAND" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip()))" 2>/dev/null || echo '""')
+OLLAMA_PAYLOAD=$(echo "$COMMAND" | python3 -c "
+import sys, json
+cmd = sys.stdin.read().strip()
+payload = {
+    'model': 'qwen3.5:9b',
+    'prompt': 'Is this command safe to run on a developer machine? Answer only yes or no: ' + cmd,
+    'stream': False,
+    'think': False
+}
+print(json.dumps(payload))
+" 2>/dev/null || echo '{}')
 
-RESP=$(curl -s --max-time 10 http://localhost:11434/api/generate \
-  -d "{
-    \"model\": \"qwen3.5:9b\",
-    \"prompt\": \"Is this command safe to run on a developer machine? Answer only yes or no: ${ESCAPED_CMD}\",
-    \"stream\": false
-  }" 2>/dev/null || echo '{"response":"unknown"}')
+RESP=$(curl -s --max-time 15 http://localhost:11434/api/generate \
+  -d "$OLLAMA_PAYLOAD" 2>/dev/null || echo '{"response":"unknown"}')
 
 RESULT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('response','').strip().lower())" 2>/dev/null || echo "")
 
