@@ -1,150 +1,95 @@
-# cca - Claude Code 自动确认工具
+# cc-auto — Claude Code 安全钩子
 
 [English](README.md) | [简体中文](README_zh.md)
 
-cca 通过监听 Claude Code TUI 输出，调用本地 Ollama 模型自动判断操作安全性，实现 Claude Code 无人值守运行。
+cc-auto 通过 bash 钩子和 Ollama 为 Claude Code 添加本地安全门控。它拦截 Bash 工具调用，在执行前判断操作是否安全。
 
-> *I genuinely love using Claude Code — it's the most capable coding agent I've worked with. Every time it autonomously completes a complex task, I feel like we're one step closer to AGI. The only thing that bothered me was the constant permission prompts during long sessions. So I built cca to scratch my own itch — and to let the agent run a little more freely, because I believe that's how we get there.*
+> `cca` 和 `claude` 用法完全一样，但自动启用 Ollama 安全钩子。
+
+## 工作原理
+
+```
+cca [参数...]
+ │
+ ▼
+claude --settings hook-settings.json [参数...]
+ │
+ ▼ (每次 Bash 工具调用)
+safe-hook.sh
+ ├── 第一层：硬拦截（rm -rf、sudo 等）→ 拒绝
+ ├── 第二层：Ollama（qwen3.5:9b）判断 → 允许 / 拒绝
+ └── Ollama 不确定 → 询问用户
+```
+
+- **只拦截 Bash 工具调用** — Edit、Write、Read 等自动放行
+- **不干扰用户选择** — 计划审批、模式选择等不受影响
+- **失败时放行** — Ollama 不可达时回退到询问用户
 
 ## 前置要求
 
-- Python >= 3.9
-- [uv](https://docs.astral.sh/uv/)
-- [Ollama](https://ollama.ai/) 已运行，并拉取模型：
+- macOS（使用系统自带的 `python3`）
+- [Ollama](https://ollama.ai/) 本地运行
 
 ```bash
-ollama pull gemma3:4b
+ollama pull qwen3.5:9b
 ```
-
-## 为什么用 cca
-
-- **纯 TUI 注入** — 在终端 I/O 层操作，Claude Code 更新不会导致失效
-- **零侵入** — 不修改 Claude Code 及其配置，更新后无需重新安装
-- **完全本地** — Ollama 本地运行，无 API 费用，数据不出本机
-- **零 Claude Code 配置** — 无需 hooks 或设置改动，用 `cca` 代替 `claude` 即可
 
 ## 快速开始
 
 ```bash
-# 1. 安装并启动 Ollama，拉取模型
-ollama pull gemma3:4b
+# 1. 克隆仓库
+git clone https://github.com/LehaoLin/cc-auto.git
+cd cc-auto
 
-# 2. 确认模型名称与 config.yaml 一致（默认: gemma3:4b）
-ollama list
+# 2. 拉取 Ollama 模型
+ollama pull qwen3.5:9b
 
-# 3. 安装 cca（重复运行安全无副作用）
-# macOS / Linux
-./install.sh
-# Windows
-.\install.ps1
+# 3. 安装 cca 命令（一次性设置）
+#    会在 ~/.local/bin/cca 创建软链接
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/cca" ~/.local/bin/cca
 
-# 4. 运行
-cca                        # 启动 Claude Code + 自动确认
+# 确保 ~/.local/bin 在 PATH 中
+# （如果已配置可跳过）
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
+# 4. 像 claude 一样使用 cca
+cca                        # 交互模式
 cca -c                     # 继续上次会话
 cca --resume ID            # 恢复指定会话
-cca -p "query"             # 非交互式查询（自动确认仍生效）
+cca -p "修复这个 bug"       # 单次模式
 cca --model sonnet         # 指定模型
-cca --worktree feature-auth  # 在隔离的 git worktree 中启动
-cca claude [args...]       # 显式写法，等同 `cca`
-cca -h                     # 显示 cca 帮助信息
-```
-
-所有参数（`-h`/`--help` 除外）直接转发给 `claude` CLI。完整参数列表请参考 `claude --help`。
-
-## 配置
-
-编辑项目目录下的 `config.yaml`：
-
-```yaml
-ollama_model: "gemma3:4b"      # Ollama 模型名称
-ollama_url: "http://localhost:11434"  # Ollama 地址
-context_window: 2000           # 滑动窗口大小（字符数）
-idle_timeout: 6                # TUI 静止超时（秒）
+cca --worktree feature-auth  # 隔离的 git worktree
 ```
 
 ## 项目结构
 
 ```
-cca/
-├── __init__.py
-├── __main__.py    # python -m cca 入口
-├── cli.py         # CLI 参数解析
-├── config.py      # 配置加载
-├── monitor.py     # PTY 监听 + 按键注入
-├── detector.py    # 提示检测 + ANSI 剥离
-├── judge.py       # Ollama API 调用
-└── prompt.py      # 安全判断提示词
+├── cca                 # 包装脚本（claude 的替代品）
+├── safe-hook.sh        # PreToolUse 钩子脚本（两层安全判断）
+├── hook-settings.json  # 钩子配置（通过 --settings 加载）
+├── LICENSE
+└── README.md
 ```
 
-## 日志
+## 自定义
 
-运行日志写入项目目录的 `cca.log`，可用于排查检测和判断行为。
+### 更换 Ollama 模型
 
-## 工作原理
+编辑 `safe-hook.sh` 中 `"model": "qwen3.5:9b"` 那行，替换为你已拉取的模型。
 
-检测流程分为两层：
+### 添加更多危险模式
 
-### 第一层：提示检测（基于正则，零延迟）
+编辑 `safe-hook.sh` 第一层的 `grep -qEi` 行。
 
-后台线程流式监听 Claude Code TUI 输出（滑动窗口缓冲区），通过正则匹配检测确认提示：
+### 拦截更多工具
 
-- **Yes/No 提示** — 匹配编号选择界面 `1. Yes` / `2. No` 模式
-- **取消/确认提示** — 匹配 "Esc to cancel"、"enter to confirm"、"Tab to amend" 等关键词
-- **空闲超时** — TUI 输出在可配置秒数内无变化时触发
-
-此层在每次读取循环中执行，不涉及模型调用，无额外开销。
-
-### 第二层：安全判断（Ollama）
-
-检测到确认提示后，将缓冲区上下文发送给本地 Ollama 模型（使用[安全判断提示词](cca/prompt.py)），分类为**安全**或**危险**：
-
-- **安全** → 自动选择 "Yes"（发送 `1` + 回车）
-- **危险** → 自动选择 "No"（查找 No 选项编号，发送编号 + 回车）
-- **重试机制** — 如果操作后 5 秒内 TUI 无变化，重新判断
-
-### 安全分类标准
-
-**危险操作：**
-- 删除项目目录外的用户文件
-- 修改关键系统文件（`/etc/hosts`、`/etc/sudoers`）
-- 对非项目文件执行破坏性命令（项目外 `rm -rf`、`dd`、`mkfs`）
-- 强制推送 main/master 分支
-- 在公开位置暴露密钥或凭证
-- 任何可能导致项目外不可逆数据丢失的操作
-
-**安全操作：**
-- 创建新文件或目录
-- 编辑项目源代码文件
-- 只读命令（`ls`、`cat`、`grep`、`find`、`git status` 等）
-- 在项目内运行测试、代码检查、构建命令
-- 安装项目依赖（`npm install`、`pip install`）
-- Git 操作：commit、push、pull、merge、rebase、reset、分支管理
-- 安装系统包（`brew install`、`apt install`、`npm install -g`）
-- 修改项目级配置文件（`.gitignore`、`.env`、`package.json` 等）
-- 正常开发工作流操作
-
-### 架构图
-
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  PTY (claude) │────▶│   Detector   │────▶│    Judge     │
-│  TUI 输出     │     │  (正则匹配)  │     │  (Ollama)    │
-└──────────────┘     └──────────────┘     └──────┬───────┘
-       ▲                                          │
-       │            ┌──────────────┐              │
-       └────────────│  按键注入     │◀─────────────┘
-                    │  (pexpect)   │   safe / dangerous
-                    └──────────────┘
-```
-
-1. PTY 启动 Claude Code，后台线程读取 TUI 输出
-2. Detector 扫描缓冲区检测确认提示（正则，高频轮询）
-3. 检测到提示后，Judge 将上下文发送给 Ollama 进行安全分类
-4. 根据判定结果，按键注入自动按下对应选项
+修改 `safe-hook.sh` 中 `if [ "$TOOL_NAME" != "Bash" ]` 判断，加入其他工具名。
 
 ## 参与贡献
 
-欢迎提 Issue 和 PR！作者目前只有 macOS 环境，其他平台无法测试。如果在 Linux、Windows 等环境遇到问题，欢迎提交 Issue 或 PR 帮助改进跨平台支持。
+欢迎提 Issue 和 PR！
 
 ## 许可证
 

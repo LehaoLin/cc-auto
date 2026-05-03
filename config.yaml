@@ -1,4 +1,0 @@
-ollama_model: "gemma3:4b"
-ollama_url: "http://localhost:11434"
-context_window: 2000
-idle_timeout: 6

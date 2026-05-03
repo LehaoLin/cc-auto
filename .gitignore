@@ -33,3 +33,6 @@ venv/
 # Logs
 *.log
 logs/
+
+# Build artifacts
+cca.egg-info/

@@ -1,150 +1,95 @@
-# cca - Claude Code Auto-Confirmation Tool
+# cc-auto — Claude Code Safety Hook
 
 [English](README.md) | [简体中文](README_zh.md)
 
-cca enables unattended Claude Code sessions by monitoring TUI output and using a local Ollama model to judge whether operations are safe, automatically confirming or rejecting them.
+cc-auto adds a local safety gate to Claude Code using a bash hook and Ollama. It intercepts Bash tool calls and judges whether they are safe before execution.
 
-> *I genuinely love using Claude Code — it's the most capable coding agent I've worked with. Every time it autonomously completes a complex task, I feel like we're one step closer to AGI. The only thing that bothered me was the constant permission prompts during long sessions. So I built cca to scratch my own itch — and to let the agent run a little more freely, because I believe that's how we get there.*
+> `cca` works exactly like `claude`, but with Ollama safety hook active.
+
+## How It Works
+
+```
+cca [args...]
+ │
+ ▼
+claude --settings hook-settings.json [args...]
+ │
+ ▼ (every Bash tool call)
+safe-hook.sh
+ ├── Layer 1: Hard-block (rm -rf, sudo, etc.) → DENY
+ ├── Layer 2: Ollama (qwen3.5:9b) judges → ALLOW / DENY
+ └── Ollama unsure → ASK user
+```
+
+- **Only gates Bash tool calls** — Edit, Write, Read, etc. are auto-allowed
+- **Does NOT interfere with user choices** — plan approval, mode selection, etc. are untouched
+- **Fail-open** — if Ollama is unreachable, falls back to asking the user
 
 ## Prerequisites
 
-- Python >= 3.9
-- [uv](https://docs.astral.sh/uv/)
-- [Ollama](https://ollama.ai/) running with a pulled model:
+- macOS (uses `python3` which ships with the system)
+- [Ollama](https://ollama.ai/) running locally
 
 ```bash
-ollama pull gemma3:4b
+ollama pull qwen3.5:9b
 ```
-
-## Why cca
-
-- **TUI-level injection** — works at the terminal I/O layer, won't break when Claude Code updates
-- **Non-intrusive** — doesn't modify Claude Code or its config; no reinstall needed after updates
-- **Fully local** — Ollama runs on your machine, no API costs, no data leaves your machine
-- **Zero Claude Code config** — no hooks, no settings changes, just run `cca` instead of `claude`
 
 ## Quick Start
 
 ```bash
-# 1. Install and start Ollama, then pull a model
-ollama pull gemma3:4b
+# 1. Clone the repo
+git clone https://github.com/LehaoLin/cc-auto.git
+cd cc-auto
 
-# 2. Verify the model name matches config.yaml (default: gemma3:4b)
-ollama list
+# 2. Pull the Ollama model
+ollama pull qwen3.5:9b
 
-# 3. Install cca (re-running is safe and idempotent)
-# macOS / Linux
-./install.sh
-# Windows
-.\install.ps1
+# 3. Install cca command (one-time setup)
+#    This creates a symlink at ~/.local/bin/cca
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/cca" ~/.local/bin/cca
 
-# 4. Run
-cca                        # Start Claude Code with auto-confirmation
-cca -c                     # Continue last session
-cca --resume ID            # Resume a specific session
-cca -p "query"             # Non-interactive query (auto-confirm still active)
-cca --model sonnet         # Use specific model
-cca --worktree feature-auth  # Start in isolated git worktree
-cca claude [args...]       # Explicit form, same as `cca`
-cca -h                     # Show cca help
-```
+# Make sure ~/.local/bin is in your PATH
+# (skip if already configured)
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 
-All arguments (except `-h`/`--help`) are forwarded to the `claude` CLI. See `claude --help` for full flag reference.
-
-## Configuration
-
-Edit `config.yaml` in the project directory:
-
-```yaml
-ollama_model: "gemma3:4b"      # Ollama model name
-ollama_url: "http://localhost:11434"  # Ollama server address
-context_window: 2000           # Sliding window size (characters)
-idle_timeout: 6                # TUI idle timeout (seconds)
+# 4. Use cca just like claude
+cca                        # interactive mode
+cca -c                     # continue last session
+cca --resume ID            # resume a specific session
+cca -p "fix the bug"       # one-shot mode
+cca --model sonnet         # specify model
+cca --worktree feature-auth  # isolated git worktree
 ```
 
 ## Project Structure
 
 ```
-cca/
-├── __init__.py
-├── __main__.py    # python -m cca entry point
-├── cli.py         # CLI argument parsing
-├── config.py      # Configuration loading
-├── monitor.py     # PTY monitoring + key injection
-├── detector.py    # Prompt detection + ANSI stripping
-├── judge.py       # Ollama API calls
-└── prompt.py      # Safety judgment prompt templates
+├── cca                 # Wrapper script (drop-in replacement for claude)
+├── safe-hook.sh        # PreToolUse hook script (two-layer safety)
+├── hook-settings.json  # Hook configuration (loaded via --settings)
+├── LICENSE
+└── README.md
 ```
 
-## Logging
+## Customization
 
-Runtime logs are written to `cca.log` in the project directory, useful for debugging detection and judgment behavior.
+### Change the Ollama model
 
-## How It Works
+Edit `safe-hook.sh`, line with `"model": "qwen3.5:9b"` — replace with any model you have pulled.
 
-The detection pipeline has two layers:
+### Add more dangerous patterns
 
-### Layer 1: Prompt Detection (Regex-based, zero latency)
+Edit the `grep -qEi` line in Layer 1 of `safe-hook.sh`.
 
-A background thread streams the Claude Code TUI output through a sliding window buffer and detects confirmation prompts using pattern matching:
+### Gate more tools
 
-- **Yes/No prompt** — matches the numbered `1. Yes` / `2. No` selection UI
-- **Cancel/confirm prompt** — matches keywords like "Esc to cancel", "enter to confirm", "Tab to amend"
-- **Idle timeout** — triggers when TUI output hasn't changed for a configurable number of seconds
-
-This layer runs on every read cycle with no model overhead.
-
-### Layer 2: Safety Judgment (Ollama)
-
-When a confirmation prompt is detected, the buffer context is sent to a local Ollama model (using the [safety judgment prompt](cca/prompt.py)) which classifies the operation as **safe** or **dangerous**:
-
-- **Safe** → automatically selects "Yes" (sends `1` + Enter)
-- **Dangerous** → automatically selects "No" (finds the No option number, sends it + Enter)
-- **Retry** — if the TUI hasn't changed 5 seconds after an action, re-judges the prompt
-
-### Safety Classification Criteria
-
-**DANGEROUS operations:**
-- Deleting user files outside the project directory
-- Modifying critical system files (`/etc/hosts`, `/etc/sudoers`)
-- Running destructive commands targeting non-project files (`rm -rf` outside project, `dd`, `mkfs`)
-- Force pushing to main/master branch
-- Exposing secrets or credentials in public locations
-- Any operation that could cause irreversible data loss outside the project
-
-**SAFE operations:**
-- Creating new files or directories
-- Editing project source code files
-- Running read-only commands (`ls`, `cat`, `grep`, `find`, `git status`, etc.)
-- Running tests, linters, build commands within the project
-- Installing project dependencies (`npm install`, `pip install`)
-- Git operations: commit, push, pull, merge, rebase, reset, branch management
-- Installing system packages (`brew install`, `apt install`, `npm install -g`)
-- Modifying project-level config files (`.gitignore`, `.env`, `package.json`, etc.)
-- Normal development workflow operations
-
-### Architecture
-
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  PTY (claude) │────▶│   Detector   │────▶│    Judge     │
-│  TUI output   │     │  (regex)     │     │  (Ollama)    │
-└──────────────┘     └──────────────┘     └──────┬───────┘
-       ▲                                          │
-       │            ┌──────────────┐              │
-       └────────────│  Key Inject  │◀─────────────┘
-                    │  (pexpect)   │   safe / dangerous
-                    └──────────────┘
-```
-
-1. PTY spawns Claude Code, background thread reads TUI output
-2. Detector scans buffer for confirmation prompts (regex, high-frequency)
-3. When a prompt is found, Judge sends context to Ollama for safety classification
-4. Based on the verdict, key injection presses the appropriate option
+Change the `if [ "$TOOL_NAME" != "Bash" ]` check in `safe-hook.sh` to include other tool names.
 
 ## Contributing
 
-Issues and PRs are welcome! The author currently only has access to macOS — if you encounter problems on Linux, Windows, or other environments, please open an issue or submit a PR to help improve cross-platform support.
+Issues and PRs welcome!
 
 ## License
 
