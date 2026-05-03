@@ -2,7 +2,7 @@
 # cca — Claude Code with Ollama safety hook
 # Usage: cca [any claude args...]
 # Equivalent to: claude --settings hook-settings.json [args...]
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 SAFE_HOOK_PATH="$SCRIPT_DIR/safe-hook.sh"
 SETTINGS=$(sed "s|bash safe-hook.sh|bash $SAFE_HOOK_PATH|g" "$SCRIPT_DIR/hook-settings.json")
 exec claude --settings <(echo "$SETTINGS") "$@"
