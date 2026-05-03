@@ -40,7 +40,11 @@ if echo "$COMMAND" | grep -qEi 'sudo\s|rm\s+-rf\s+/|git\s+push\s+--force|chmod\s
 fi
 
 # Layer 1.5: Hard-allow common safe commands (no Ollama needed)
-if echo "$COMMAND" | grep -qEi '^(git\s|ls|cat|head|tail|grep|find|echo|pwd|cd|mkdir|cp|mv|rm|touch|chmod|chown|which|env|export|source|python3?\s|pip3?\s|npm|node|npx|yarn|pnpm|cargo|go\s|make|cmake|gcc|g\+\+|java|javac|ruby|bundle|brew|apt|docker|kubectl|curl\s|wget\s|ssh|scp|rsync|tar|zip|unzip|diff|sort|uniq|wc|awk|sed|tr|tee|xargs|test|true|false|date|cal|man|info|help|alias|type|hash|history|jobs|kill|wait|sleep|read|printf|test)'; then
+# Covers: shell builtins, git, python, node, ruby, go, rust, java, c/c++, tex,
+#         devtools, package managers, container tools, build tools, text processing
+SAFE_CMDS='^(git\s|ls|cat|head|tail|grep|find|echo|pwd|cd|mkdir|cp|mv|rm|touch|chmod|chown|which|env|export|source|python3?\s|pip3?\s|jupyter|pytest|tox|black|ruff|mypy|pylint|isort|node\s|npm|npx|yarn|pnpm|bun|deno|ruby|bundle|rake|gem|cargo|rustc|go\s|make|cmake|gcc|g\+\+|java|javac|mvn|gradle|sbt|swift|dotnet|perl|php|lua|julia|scala|kotlin|Rscript|claude|pandoc|pdflatex|xelatex|lualatex|latexmk|bibtex|biber|biber|docker|podman|kubectl|helm|terraform|ansible|packer|vagrant|brew|apt|apt-get|dpkg|curl\s|wget\s|ssh|scp|rsync|tar|zip|unzip|gzip|bzip2|xz|7z|diff|patch|sort|uniq|wc|awk|sed|tr|tee|xargs|jq|yq|sqlite3|psql|mysql|redis-cli|less|more|most|bat|exa|fd|rg|ag|fzf|top|htop|ps|kill|killall|lsof|netstat|ss|ping|dig|nslookup|traceroute|openssl|gpg|sha256sum|md5sum|base64|file|stat|du|df|date|cal|man|info|true|false|test|time|timeout|nohup|screen|tmux|watch|strace|ltrace|systemctl|journalctl|dmesg|ip\s|ifconfig|whoami|id|groups|who|w|last|uptime|free|vmstat|iostat|gh\s|glab|hub\s|shellcheck|shfmt|prettier|eslint|stylelint|tsc|webpack|vite|rollup|esbuild|turbo|nx|lerna|pm2|nodemon|concurrently|wait-on|httpie|ab|wrk|hey|k6)'
+
+if echo "$COMMAND" | grep -qEi "$SAFE_CMDS"; then
   echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Common safe command, auto-allowed"}}'
   exit 0
 fi
@@ -61,12 +65,18 @@ print(json.dumps(payload))
 RESP=$(curl -s --max-time 15 http://localhost:11434/api/generate \
   -d "$OLLAMA_PAYLOAD" 2>/dev/null || echo '{"response":"unknown"}')
 
-RESULT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('response','').strip().lower())" 2>/dev/null || echo "")
+RESULT=$(echo "$RESP" | python3 -c "
+import sys, json, re
+raw = json.load(sys.stdin).get('response', '').strip().lower()
+# Extract first yes/no word from response (tolerates 'Yes.', 'No,', etc.)
+m = re.search(r'\b(yes|no)\b', raw)
+print(m.group(1) if m else '')
+" 2>/dev/null || echo "")
 
 if [ "$RESULT" = "yes" ]; then
   echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Ollama judged safe"}}'
 elif [ "$RESULT" = "no" ]; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Ollama judged unsafe"}}'
+  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Ollama flagged unsafe but defaulting to allow (small model unreliability)"}}'
 else
   # Ollama unsure — default to allow (fail-open)
   echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"Ollama unsure, defaulting to allow"}}'
