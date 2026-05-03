@@ -45,7 +45,7 @@ cd cc-auto
 ollama pull qwen3.5:9b
 
 # 3. 安装 cca 命令（一次性设置）
-#    会在 ~/.local/bin/cca 创建软链接
+#    创建软链接，不复制文件到 ~/.local/bin
 mkdir -p ~/.local/bin
 ln -sf "$(pwd)/cca" ~/.local/bin/cca
 

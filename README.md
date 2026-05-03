@@ -45,7 +45,7 @@ cd cc-auto
 ollama pull qwen3.5:9b
 
 # 3. Install cca command (one-time setup)
-#    This creates a symlink at ~/.local/bin/cca
+#    Creates a symlink — no files copied to ~/.local/bin
 mkdir -p ~/.local/bin
 ln -sf "$(pwd)/cca" ~/.local/bin/cca
 
